@@ -1,0 +1,103 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - dev
+      - cicd-new
+
+  pull_request:
+    branches:
+      - qa-release
+      - 'qa-release-*'
+
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Prod branch (prod or prod_*)"
+        required: true
+        type: string
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      ENV: ${{ steps.resolve.outputs.ENV }}
+      STAGE: ${{ steps.resolve.outputs.STAGE }}
+      REF: ${{ steps.resolve.outputs.REF }}
+
+    steps:
+      - id: resolve
+        shell: bash
+        run: |
+          set -e
+
+          EVENT="$GITHUB_EVENT_NAME"
+
+          # Get branch context safely
+          REF_NAME="${GITHUB_REF#refs/heads/}"
+          BASE_REF="$GITHUB_BASE_REF"
+
+          # ---------- cicd-new ----------
+          if [[ "$EVENT" == "push" && "$REF_NAME" == "cicd-new" ]]; then
+            echo "ENV=$REF_NAME" >> $GITHUB_OUTPUT
+            echo "STAGE=$REF_NAME" >> $GITHUB_OUTPUT
+            echo "REF=$REF_NAME" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # ---------- DEV ----------
+          if [[ "$EVENT" == "push" && "$REF_NAME" == "dev" ]]; then
+            echo "ENV=$REF_NAME" >> $GITHUB_OUTPUT
+            echo "STAGE=$REF_NAME" >> $GITHUB_OUTPUT
+            echo "REF=$REF_NAME" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # ---------- QA ----------
+          if [[ "$EVENT" == "pull_request" && "$BASE_REF" == qa-release* ]]; then
+            ENV_NAME="${BASE_REF%%-*}"
+            echo "ENV=$ENV_NAME" >> $GITHUB_OUTPUT
+            echo "STAGE=$ENV_NAME" >> $GITHUB_OUTPUT
+            echo "REF=$GITHUB_HEAD_REF" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # ---------- PROD (manual only) ----------
+          if [[ "$EVENT" == "workflow_dispatch" ]]; then
+            REF_INPUT="${{ inputs.branch }}"
+
+            if [[ "$REF_INPUT" != prod* ]]; then
+              echo "❌ Only prod branches allowed"
+              exit 1
+            fi
+
+            ENV_NAME="${REF_INPUT%%_*}"
+            echo "ENV=$ENV_NAME" >> $GITHUB_OUTPUT
+            echo "STAGE=$ENV_NAME" >> $GITHUB_OUTPUT
+            echo "REF=$REF_INPUT" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "❌ Invalid trigger"
+          exit 1
+
+  pipeline:
+    needs: resolve
+    runs-on: ubuntu-latest
+
+    env:
+      ENV: ${{ needs.resolve.outputs.ENV }}
+      STAGE: ${{ needs.resolve.outputs.STAGE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.REF }}
+
+      - name: Confirm
+        run: |
+          echo "ENV=$ENV"
+          echo "STAGE=$STAGE"
+          echo "REF=${{ needs.resolve.outputs.REF }}"
