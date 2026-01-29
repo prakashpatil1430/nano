@@ -1,20 +1,22 @@
-name: CI/CD Pipeline 1
+name: CI/CD Pipeline
 
 on:
+  # -------- DEV (auto) --------
   push:
     branches:
       - dev
-      - cicd-new
 
+  # -------- QA (auto via PR) --------
   pull_request:
     branches:
       - qa-release
       - 'qa-release-*'
 
+  # -------- PROD (manual only) --------
   workflow_dispatch:
     inputs:
       branch:
-        description: "Prod branch (prod or prod_*)"
+        description: "Prod branch to deploy (prod or prod_*)"
         required: true
         type: string
 
@@ -33,20 +35,10 @@ jobs:
           set -e
 
           EVENT="$GITHUB_EVENT_NAME"
-
-          # Get branch context safely
           REF_NAME="${GITHUB_REF#refs/heads/}"
           BASE_REF="$GITHUB_BASE_REF"
 
-          # ---------- cicd-new ----------
-          if [[ "$EVENT" == "push" && "$REF_NAME" == "cicd-new" ]]; then
-            echo "ENV=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "STAGE=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "REF=$REF_NAME" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # ---------- DEV ----------
+          # ---------------- DEV (auto) ----------------
           if [[ "$EVENT" == "push" && "$REF_NAME" == "dev" ]]; then
             echo "ENV=$REF_NAME" >> $GITHUB_OUTPUT
             echo "STAGE=$REF_NAME" >> $GITHUB_OUTPUT
@@ -54,7 +46,7 @@ jobs:
             exit 0
           fi
 
-          # ---------- QA ----------
+          # ---------------- QA (auto) ----------------
           if [[ "$EVENT" == "pull_request" && "$BASE_REF" == qa-release* ]]; then
             ENV_NAME="${BASE_REF%%-*}"
             echo "ENV=$ENV_NAME" >> $GITHUB_OUTPUT
@@ -63,12 +55,12 @@ jobs:
             exit 0
           fi
 
-          # ---------- PROD (manual only) ----------
+          # ---------------- PROD (manual only) ----------------
           if [[ "$EVENT" == "workflow_dispatch" ]]; then
             REF_INPUT="${{ inputs.branch }}"
 
             if [[ "$REF_INPUT" != prod* ]]; then
-              echo "❌ Only prod branches allowed"
+              echo "❌ Prod deployments allowed only from prod or prod_* branches"
               exit 1
             fi
 
@@ -96,8 +88,10 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.REF }}
 
-      - name: Confirm
+      - name: Show resolved context
         run: |
           echo "ENV=$ENV"
           echo "STAGE=$STAGE"
-          echo "REF=${{ needs.resolve.outputs.REF }}"
+          echo "BRANCH=${{ needs.resolve.outputs.REF }}"
+
+      # ---- your build / deploy steps here ----
