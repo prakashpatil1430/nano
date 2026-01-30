@@ -1,23 +1,20 @@
 name: CI/CD Pipeline
 
 on:
-  # -------- DEV (auto) --------
   push:
-    branches:
-      - dev
-      - cicd-new
-
-  # -------- QA (auto via PR) --------
+    branches: [dev, cicd-new]
   pull_request:
-    branches:
-      - qa-release
-      - 'qa-release-*'
-
-  # -------- PROD (manual only) --------
+    branches: [qa-release, 'qa-release-*']
   workflow_dispatch:
     inputs:
-      branch:
-        description: "Prod branch to deploy (prod or prod_*)"
+      env_selection:
+        description: "Select Environment"
+        required: true
+        type: choice
+        options:
+          - prod
+      branch_name:
+        description: "Branch Name (prod or prod_*)"
         required: true
         type: string
 
@@ -25,81 +22,59 @@ jobs:
   resolve:
     runs-on: ubuntu-latest
     outputs:
-      ENV: ${{ steps.resolve.outputs.ENV }}
-      STAGE: ${{ steps.resolve.outputs.STAGE }}
-      REF: ${{ steps.resolve.outputs.REF }}
+      ENV: ${{ steps.logic.outputs.ENV }}
+      STAGE: ${{ steps.logic.outputs.STAGE }}
+      REF: ${{ steps.logic.outputs.REF }}
 
     steps:
-      - id: resolve
+      - id: logic
         shell: bash
         run: |
           set -e
+          EVENT="${{ github.event_name }}"
 
-          EVENT="$GITHUB_EVENT_NAME"
-          REF_NAME="${GITHUB_REF#refs/heads/}"
-          BASE_REF="$GITHUB_BASE_REF"
+          # 1. Handle Push (Dev)
+          if [[ "$EVENT" == "push" ]]; then
+            REF_VAL="${{ github.ref_name }}"
+            if [[ "$REF_VAL" == "dev" ]]; then
+              echo "ENV=dev" >> $GITHUB_OUTPUT
+              echo "STAGE=dev" >> $GITHUB_OUTPUT
+              echo "REF=$REF_VAL" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            RAW_VAL="$REF_VAL"
 
-          # ---------------- CICD-NEW (auto) ----------------
-          if [[ "$EVENT" == "push" && "$REF_NAME" == "cicd-new" ]]; then
-            echo "ENV=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "STAGE=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "REF=$REF_NAME" >> $GITHUB_OUTPUT
-            exit 0
-          f
-          # ---------------- DEV (auto) ----------------
-          if [[ "$EVENT" == "push" && "$REF_NAME" == "dev" ]]; then
-            echo "ENV=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "STAGE=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "REF=$REF_NAME" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+          # 2. Handle Pull Request (QA)
+          elif [[ "$EVENT" == "pull_request" ]]; then
+            BASE_REF="${{ github.base_ref }}"
+            REF_VAL="${{ github.head_ref }}"
+            
+            # Specific check for "qa-release" or "qa-release-"
+            if [[ "$BASE_REF" == "qa-release" || "$BASE_REF" == qa-release-* ]]; then
+              # Dynamically extracts prefix before the first '-' (e.g., 'qa')
+              DYNAMIC_VAL="${BASE_REF%%-*}"
+              echo "ENV=${DYNAMIC_VAL,,}" >> $GITHUB_OUTPUT
+              echo "STAGE=${DYNAMIC_ENV,,}" >> $GITHUB_OUTPUT # Fixed to use same dynamic value
+              echo "REF=$REF_VAL" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            RAW_VAL="${BASE_REF%%-*}"
 
-          # ---------------- QA (auto) ----------------
-          if [[ "$EVENT" == "pull_request" && "$BASE_REF" == qa-release* ]]; then
-            ENV_NAME="${BASE_REF%%-*}"
-            echo "ENV=$ENV_NAME" >> $GITHUB_OUTPUT
-            echo "STAGE=$ENV_NAME" >> $GITHUB_OUTPUT
-            echo "REF=$GITHUB_HEAD_REF" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # ---------------- PROD (manual only) ----------------
-          if [[ "$EVENT" == "workflow_dispatch" ]]; then
-            REF_INPUT="${{ inputs.branch }}"
-
-            if [[ "$REF_INPUT" != prod* ]]; then
-              echo "❌ Prod deployments allowed only from prod or prod_* branches"
+          # 3. Handle Manual Dispatch (Prod)
+          elif [[ "$EVENT" == "workflow_dispatch" ]]; then
+            ENV_INPUT="${{ inputs.env_selection }}"
+            REF_INPUT="${{ inputs.branch_name }}"
+            
+            if [[ "$REF_INPUT" == "prod" || "$REF_INPUT" == prod_* ]]; then
+              RAW_VAL="$ENV_INPUT"
+              REF_VAL="$REF_INPUT"
+            else
+              echo "❌ Error: Prod requires branch 'prod' or 'prod_*'"
               exit 1
             fi
-
-            ENV_NAME="${REF_INPUT%%_*}"
-            echo "ENV=$ENV_NAME" >> $GITHUB_OUTPUT
-            echo "STAGE=$ENV_NAME" >> $GITHUB_OUTPUT
-            echo "REF=$REF_INPUT" >> $GITHUB_OUTPUT
-            exit 0
           fi
 
-          echo "❌ Invalid trigger"
-          exit 1
-
-  pipeline:
-    needs: resolve
-    runs-on: ubuntu-latest
-
-    env:
-      ENV: ${{ needs.resolve.outputs.ENV }}
-      STAGE: ${{ needs.resolve.outputs.STAGE }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.resolve.outputs.REF }}
-
-      - name: Show resolved context
-        run: |
-          echo "ENV=$ENV"
-          echo "STAGE=$STAGE"
-          echo "BRANCH=${{ needs.resolve.outputs.REF }}"
-
-      # ---- your build / deploy steps here ----
+          # Default logic (e.g., cicd-new or fallback)
+          echo "ENV=${RAW_VAL,,}" >> $GITHUB_OUTPUT
+          echo "STAGE=${RAW_VAL^^}" >> $GITHUB_OUTPUT
+          echo "REF=$REF_VAL" >> $GITHUB_OUTPUT
