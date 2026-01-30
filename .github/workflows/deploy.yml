@@ -1,103 +1,85 @@
-name: CI/CD Pipeline
+name: t360 backend 123
+
+permissions:
+  id-token: write
+  contents: read
 
 on:
-  push:
-    branches:
-      - dev
-      - cicd-new
-
   pull_request:
-    branches:
-      - qa-release
-      - 'qa-release-*'
-
+    branches: [dev, qa-release, 'qa-release-*']
+    types: [closed] # Only triggers when closed/merged
   workflow_dispatch:
     inputs:
+      environment:
+        description: "Target environment (prod only)"
+        required: true
+        type: choice
+        options: [prod]
       branch:
-        description: "Prod branch (prod or prod_*)"
+        description: "Prod branch (must start with prod_*)"
         required: true
         type: string
 
 jobs:
   resolve:
+    name: Resolve Environment
     runs-on: ubuntu-latest
+    # Only run if it's a merge OR a manual dispatch
+    if: |
+      (github.event.pull_request.merged == true) || 
+      (github.event_name == 'workflow_dispatch')
     outputs:
-      ENV: ${{ steps.resolve.outputs.ENV }}
-      STAGE: ${{ steps.resolve.outputs.STAGE }}
-      REF: ${{ steps.resolve.outputs.REF }}
-
+      ENV: ${{ steps.logic.outputs.ENV }}
+      STAGE: ${{ steps.logic.outputs.STAGE }}
+      BRANCH: ${{ steps.logic.outputs.BRANCH }}
+      ROLE: ${{ steps.logic.outputs.ROLE }}
     steps:
-      - id: resolve
+      - id: logic
         shell: bash
         run: |
-          set -e
-
-          EVENT="$GITHUB_EVENT_NAME"
-
-          # Get branch context safely
-          REF_NAME="${GITHUB_REF#refs/heads/}"
-          BASE_REF="$GITHUB_BASE_REF"
-
-          # ---------- cicd-new ----------
-          if [[ "$EVENT" == "push" && "$REF_NAME" == "cicd-new" ]]; then
-            echo "ENV=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "STAGE=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "REF=$REF_NAME" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # ---------- DEV ----------
-          if [[ "$EVENT" == "push" && "$REF_NAME" == "dev" ]]; then
-            echo "ENV=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "STAGE=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "REF=$REF_NAME" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # ---------- QA ----------
-          if [[ "$EVENT" == "pull_request" && "$BASE_REF" == qa-release* ]]; then
-            ENV_NAME="${BASE_REF%%-*}"
-            echo "ENV=$ENV_NAME" >> $GITHUB_OUTPUT
-            echo "STAGE=$ENV_NAME" >> $GITHUB_OUTPUT
-            echo "REF=$GITHUB_HEAD_REF" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # ---------- PROD (manual only) ----------
-          if [[ "$EVENT" == "workflow_dispatch" ]]; then
-            REF_INPUT="${{ inputs.branch }}"
-
-            if [[ "$REF_INPUT" != prod* ]]; then
-              echo "❌ Only prod branches allowed"
-              exit 1
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE_REF="${{ github.base_ref }}"
+            if [[ "$BASE_REF" == "dev" ]]; then
+              ENV="dev"
+              STAGE="dev"
+              ROLE="${{ secrets.AWS_NONPROD_ROLE_ARN }}"
+            elif [[ "$BASE_REF" == qa-release* ]]; then
+              ENV="qa"
+              STAGE="qa"
+              ROLE="${{ secrets.AWS_NONPROD_ROLE_ARN }}"
             fi
-
-            ENV_NAME="${REF_INPUT%%_*}"
-            echo "ENV=$ENV_NAME" >> $GITHUB_OUTPUT
-            echo "STAGE=$ENV_NAME" >> $GITHUB_OUTPUT
-            echo "REF=$REF_INPUT" >> $GITHUB_OUTPUT
-            exit 0
+            BRANCH="$BASE_REF"
+          else
+            # Manual Prod Dispatch
+            ENV="prod"
+            STAGE="prod"
+            BRANCH="${{ github.event.inputs.branch }}"
+            if [[ "$BRANCH" != prod_* ]]; then echo "Invalid branch"; exit 1; fi
+            ROLE="${{ secrets.AWS_PROD_ROLE_ARN }}"
           fi
 
-          echo "❌ Invalid trigger"
-          exit 1
+          echo "ENV=$ENV" >> $GITHUB_OUTPUT
+          echo "STAGE=$STAGE" >> $GITHUB_OUTPUT
+          echo "BRANCH=$BRANCH" >> $GITHUB_OUTPUT
+          echo "ROLE=$ROLE" >> $GITHUB_OUTPUT
 
-  pipeline:
+  deploy:
+    name: Deploy to ${{ needs.resolve.outputs.ENV }}
     needs: resolve
     runs-on: ubuntu-latest
-
+    environment: ${{ needs.resolve.outputs.ENV }}
+    # --- ADD THIS BLOCK ---
     env:
       ENV: ${{ needs.resolve.outputs.ENV }}
       STAGE: ${{ needs.resolve.outputs.STAGE }}
-
+      ROLE: ${{ needs.resolve.outputs.ROLE }}
+    # ----------------------
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.resolve.outputs.REF }}
+          ref: ${{ needs.resolve.outputs.BRANCH }}
 
-      - name: Confirm
+      - name: Deploy Step
         run: |
-          echo "ENV=$ENV"
-          echo "STAGE=$STAGE"
-          echo "REF=${{ needs.resolve.outputs.REF }}"
+          echo "env IS $ENV"     # Now this will work!
+          echo "stage IS $STAGE" # Now this will work!
