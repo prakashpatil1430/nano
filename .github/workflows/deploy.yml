@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [dev, cicd-new]
+    branches: [dev, qa, cicd-new]
   pull_request:
     branches: [qa-release, 'qa-release-*']
   workflow_dispatch:
@@ -33,28 +33,30 @@ jobs:
           set -e
           EVENT="${{ github.event_name }}"
 
-          # 1. Handle Push (Dev)
+          # 1. Handle Push (Dev, QA, or Others)
           if [[ "$EVENT" == "push" ]]; then
             REF_VAL="${{ github.ref_name }}"
-            if [[ "$REF_VAL" == "dev" ]]; then
-              echo "ENV=dev" >> $GITHUB_OUTPUT
-              echo "STAGE=dev" >> $GITHUB_OUTPUT
+            
+            # Condition: If branch is exactly 'dev' OR exactly 'qa'
+            if [[ "$REF_VAL" == "dev" || "$REF_VAL" == "cicd-new" ]]; then
+              echo "ENV=$REF_VAL" >> $GITHUB_OUTPUT
+              echo "STAGE=$REF_VAL" >> $GITHUB_OUTPUT
               echo "REF=$REF_VAL" >> $GITHUB_OUTPUT
               exit 0
             fi
-            RAW_VAL="$REF_VAL"
+            
+            # Dynamic extraction for others (e.g., cicd-new -> cicd)
+            RAW_VAL="${REF_VAL%%-*}"
 
-          # 2. Handle Pull Request (QA)
+          # 2. Handle Pull Request (QA Release)
           elif [[ "$EVENT" == "pull_request" ]]; then
             BASE_REF="${{ github.base_ref }}"
             REF_VAL="${{ github.head_ref }}"
             
-            # Specific check for "qa-release" or "qa-release-"
             if [[ "$BASE_REF" == "qa-release" || "$BASE_REF" == qa-release-* ]]; then
-              # Dynamically extracts prefix before the first '-' (e.g., 'qa')
               DYNAMIC_VAL="${BASE_REF%%-*}"
               echo "ENV=${DYNAMIC_VAL,,}" >> $GITHUB_OUTPUT
-              echo "STAGE=${DYNAMIC_ENV,,}" >> $GITHUB_OUTPUT # Fixed to use same dynamic value
+              echo "STAGE=${DYNAMIC_VAL,,}" >> $GITHUB_OUTPUT
               echo "REF=$REF_VAL" >> $GITHUB_OUTPUT
               exit 0
             fi
@@ -74,7 +76,7 @@ jobs:
             fi
           fi
 
-          # Default logic (e.g., cicd-new or fallback)
+          # Default logic for fallback branches
           echo "ENV=${RAW_VAL,,}" >> $GITHUB_OUTPUT
           echo "STAGE=${RAW_VAL^^}" >> $GITHUB_OUTPUT
           echo "REF=$REF_VAL" >> $GITHUB_OUTPUT
