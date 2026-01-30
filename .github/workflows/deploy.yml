@@ -59,6 +59,7 @@ jobs:
       ENV: ${{ needs.resolve.outputs.ENV }}
       STAGE: ${{ needs.resolve.outputs.STAGE }}
       ROLE: ${{ needs.resolve.outputs.ROLE }}
+      BRANCH: ${{ needs.resolve.outputs.BRANCH }}
     # ----------------------
     steps:
       - uses: actions/checkout@v4
@@ -69,3 +70,4 @@ jobs:
         run: |
           echo "env IS $ENV"     # Now this will work!
           echo "stage IS $STAGE" # Now this will work!
+          echo "branch IS $BRANCH" # Now this will work!
