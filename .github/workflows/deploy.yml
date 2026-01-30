@@ -1,103 +1,91 @@
-name: CI/CD Pipeline
-
+name: t360 backend  123
+ 
+permissions:
+  id-token: write
+  contents: read
+ 
 on:
-  push:
-    branches:
-      - dev
-      - cicd-new
-
   pull_request:
     branches:
+      - dev
       - qa-release
-      - 'qa-release-*'
-
+      - qa-release-*
+    types:
+      - closed   # fires when PR is closed, merged check happens in job condition
+ 
   workflow_dispatch:
     inputs:
+      environment:
+        description: "Target environment (prod only)"
+        required: true
+        type: choice
+        options: [prod]
       branch:
-        description: "Prod branch (prod or prod_*)"
+        description: "Prod branch to deploy (must start with prod_*)"
         required: true
         type: string
-
+ 
 jobs:
-  resolve:
+  resolve_enviornment:
+    name: Deploy to Backend lambda
     runs-on: ubuntu-latest
-    outputs:
-      ENV: ${{ steps.resolve.outputs.ENV }}
-      STAGE: ${{ steps.resolve.outputs.STAGE }}
-      REF: ${{ steps.resolve.outputs.REF }}
-
+    # needs: test-and-build
+    if: |
+      (
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.merged == true &&
+        (
+          github.base_ref == 'dev' ||
+          github.base_ref == 'qa-release' ||
+          startsWith(github.base_ref, 'qa-release-')
+        )
+      ) ||
+      (
+        github.event_name == 'workflow_dispatch' &&
+        github.event.inputs.environment == 'prod'
+      )
+ 
     steps:
-      - id: resolve
-        shell: bash
+      - uses: actions/checkout@v4
+ 
+      - name: Determine Environment
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          INPUT_BRANCH: ${{ github.event.inputs.branch }}  # used for prod
         run: |
-          set -e
-
-          EVENT="$GITHUB_EVENT_NAME"
-
-          # Get branch context safely
-          REF_NAME="${GITHUB_REF#refs/heads/}"
-          BASE_REF="$GITHUB_BASE_REF"
-
-          # ---------- cicd-new ----------
-          if [[ "$EVENT" == "push" && "$REF_NAME" == "cicd-new" ]]; then
-            echo "ENV=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "STAGE=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "REF=$REF_NAME" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # ---------- DEV ----------
-          if [[ "$EVENT" == "push" && "$REF_NAME" == "dev" ]]; then
-            echo "ENV=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "STAGE=$REF_NAME" >> $GITHUB_OUTPUT
-            echo "REF=$REF_NAME" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # ---------- QA ----------
-          if [[ "$EVENT" == "pull_request" && "$BASE_REF" == qa-release* ]]; then
-            ENV_NAME="${BASE_REF%%-*}"
-            echo "ENV=$ENV_NAME" >> $GITHUB_OUTPUT
-            echo "STAGE=$ENV_NAME" >> $GITHUB_OUTPUT
-            echo "REF=$GITHUB_HEAD_REF" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # ---------- PROD (manual only) ----------
-          if [[ "$EVENT" == "workflow_dispatch" ]]; then
-            REF_INPUT="${{ inputs.branch }}"
-
-            if [[ "$REF_INPUT" != prod* ]]; then
-              echo "❌ Only prod branches allowed"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if [[ "$BASE_REF" == "dev" ]]; then
+              ENV=$BASE_REF
+              STAGE=$BASE_REF
+              BRANCH="$BASE_REF"
+              ROLE="${{ secrets.AWS_NONPROD_ROLE_ARN }}"
+ 
+            elif [[ "$BASE_REF" == "qa-release" || "$BASE_REF" =~ ^qa-release- ]]; then
+              ENV="${BASE_REF%%-*}"
+              BRANCH="$BASE_REF"
+              ROLE="${{ secrets.AWS_NONPROD_ROLE_ARN }}"
+            fi
+            
+ 
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            ENV=prod
+            BRANCH="$INPUT_BRANCH"
+ 
+            if [[ "$BRANCH" != prod_* ]]; then
+              echo "❌ Invalid prod branch: $BRANCH"
               exit 1
             fi
-
-            ENV_NAME="${REF_INPUT%%_*}"
-            echo "ENV=$ENV_NAME" >> $GITHUB_OUTPUT
-            echo "STAGE=$ENV_NAME" >> $GITHUB_OUTPUT
-            echo "REF=$REF_INPUT" >> $GITHUB_OUTPUT
-            exit 0
+ 
+            ROLE="${{ secrets.AWS_PROD_ROLE_ARN }}"
+            SECRET_NAME="t360-almanac-prod"
           fi
+ 
+          echo "ENV=$ENV" >> $GITHUB_ENV
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+          echo "ROLE=$ROLE" >> $GITHUB_ENV
+          echo "STAGE=$STAGE" >> $GITHUB_ENV
 
-          echo "❌ Invalid trigger"
-          exit 1
-
-  pipeline:
-    needs: resolve
-    runs-on: ubuntu-latest
-
-    env:
-      ENV: ${{ needs.resolve.outputs.ENV }}
-      STAGE: ${{ needs.resolve.outputs.STAGE }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.resolve.outputs.REF }}
-
-      - name: Confirm
-        run: |
-          echo "ENV=$ENV"
-          echo "STAGE=$STAGE"
-          echo "REF=${{ needs.resolve.outputs.REF }}"
+          cat $GITHUB_ENV
+ 
+          echo "✅ Deploying stage $STAGE from branch $BRANCH"
