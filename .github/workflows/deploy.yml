@@ -47,9 +47,14 @@ jobs:
               ENV="qa"
               STAGE="qa"
               ROLE="${{ secrets.AWS_NONPROD_ROLE_ARN }}"
+            else
+              # 2. FAIL-SAFE: If a PR somehow hits another branch, kill the job.
+              echo "::error::Automated deployment not allowed for branch: $BASE_REF"
+              exit 1
             fi
+            
             BRANCH="$BASE_REF"
-          else
+          elif
             # Manual Prod Dispatch
             ENV="prod"
             STAGE="prod"
