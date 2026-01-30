@@ -7,16 +7,14 @@ permissions:
 on:
   pull_request:
     branches: [dev, qa-release, 'qa-release-*']
-    types: [closed] # Only triggers when closed/merged
-    
+    types: [closed]
+
 jobs:
   resolve:
     name: Resolve Environment
     runs-on: ubuntu-latest
-    # Only run if it's a merge OR a manual dispatch
-    if: |
-      (github.event.pull_request.merged == true) || 
-      (github.event_name == 'workflow_dispatch')
+    # Only run steps if the PR was actually merged
+    if: github.event.pull_request.merged == true
     outputs:
       ENV: ${{ steps.logic.outputs.ENV }}
       STAGE: ${{ steps.logic.outputs.STAGE }}
@@ -26,23 +24,19 @@ jobs:
       - id: logic
         shell: bash
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            BASE_REF="${{ github.base_ref }}"
-            if [[ "$BASE_REF" == "dev" ]]; then
-              ENV="dev"
-              STAGE="dev"
-              ROLE="${{ secrets.AWS_NONPROD_ROLE_ARN }}"
-            elif [[ "$BASE_REF" == qa-release* ]]; then
-              ENV="qa"
-              STAGE="qa"
-              ROLE="${{ secrets.AWS_NONPROD_ROLE_ARN }}"
-            else
-              # 2. FAIL-SAFE: If a PR somehow hits another branch, kill the job.
-              echo "::error::Automated deployment not allowed for branch: $BASE_REF"
-              exit 1
-            fi
-            BRANCH="$BASE_REF"
+          BASE_REF="${{ github.base_ref }}"
+          
+          if [[ "$BASE_REF" == "dev" ]]; then
+            ENV="dev"
+            STAGE="dev"
+            ROLE="${{ secrets.AWS_NONPROD_ROLE_ARN }}"
+          elif [[ "$BASE_REF" == qa-release* ]]; then
+            ENV="qa"
+            STAGE="qa"
+            ROLE="${{ secrets.AWS_NONPROD_ROLE_ARN }}"
           fi
+          
+          BRANCH="$BASE_REF"
 
           echo "ENV=$ENV" >> $GITHUB_OUTPUT
           echo "STAGE=$STAGE" >> $GITHUB_OUTPUT
@@ -54,20 +48,20 @@ jobs:
     needs: resolve
     runs-on: ubuntu-latest
     environment: ${{ needs.resolve.outputs.ENV }}
-    # --- ADD THIS BLOCK ---
     env:
       ENV: ${{ needs.resolve.outputs.ENV }}
       STAGE: ${{ needs.resolve.outputs.STAGE }}
       ROLE: ${{ needs.resolve.outputs.ROLE }}
       BRANCH: ${{ needs.resolve.outputs.BRANCH }}
-    # ----------------------
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.resolve.outputs.BRANCH }}
+          ref: ${{ env.BRANCH }}
 
       - name: Deploy Step
         run: |
-          echo "env IS $ENV"     # Now this will work!
-          echo "stage IS $STAGE" # Now this will work!
-          echo "branch IS $BRANCH" # Now this will work!
+          echo "🚀 Deployment Started"
+          echo "Target Env    : $ENV"
+          echo "Target Stage  : $STAGE"
+          echo "Target Branch : $BRANCH"
+          # Standard practice: Do not echo the ROLE secret directly for security
