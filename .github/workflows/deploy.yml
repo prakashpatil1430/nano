@@ -8,18 +8,7 @@ on:
   pull_request:
     branches: [dev, qa-release, 'qa-release-*']
     types: [closed] # Only triggers when closed/merged
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: "Target environment (prod only)"
-        required: true
-        type: choice
-        options: [prod]
-      branch:
-        description: "Prod branch (must start with prod_*)"
-        required: true
-        type: string
-
+    
 jobs:
   resolve:
     name: Resolve Environment
@@ -52,15 +41,7 @@ jobs:
               echo "::error::Automated deployment not allowed for branch: $BASE_REF"
               exit 1
             fi
-            
             BRANCH="$BASE_REF"
-          elif
-            # Manual Prod Dispatch
-            ENV="prod"
-            STAGE="prod"
-            BRANCH="${{ github.event.inputs.branch }}"
-            if [[ "$BRANCH" != prod_* ]]; then echo "Invalid branch"; exit 1; fi
-            ROLE="${{ secrets.AWS_PROD_ROLE_ARN }}"
           fi
 
           echo "ENV=$ENV" >> $GITHUB_OUTPUT
