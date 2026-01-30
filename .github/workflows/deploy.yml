@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline 2
 
 on:
   push:
@@ -89,3 +89,4 @@ jobs:
           echo "🚀 Deploying to Environment: ${{ needs.resolve.outputs.ENV }}"
           echo "🛠️  Using Stage: ${{ needs.resolve.outputs.STAGE }}"
           echo "📂 From Branch: ${{ needs.resolve.outputs.REF }}"
+
