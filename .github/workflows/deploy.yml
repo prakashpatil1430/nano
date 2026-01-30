@@ -67,7 +67,13 @@ jobs:
     name: Deploy to ${{ needs.resolve.outputs.ENV }}
     needs: resolve
     runs-on: ubuntu-latest
-    environment: ${{ needs.resolve.outputs.ENV }} # Standard: Links to GitHub Environments
+    environment: ${{ needs.resolve.outputs.ENV }}
+    # --- ADD THIS BLOCK ---
+    env:
+      ENV: ${{ needs.resolve.outputs.ENV }}
+      STAGE: ${{ needs.resolve.outputs.STAGE }}
+      ROLE: ${{ needs.resolve.outputs.ROLE }}
+    # ----------------------
     steps:
       - uses: actions/checkout@v4
         with:
@@ -75,5 +81,5 @@ jobs:
 
       - name: Deploy Step
         run: |
-          echo "env IS  $ENV"
-          echo "stage IS $STAGE"
+          echo "env IS $ENV"     # Now this will work!
+          echo "stage IS $STAGE" # Now this will work!
