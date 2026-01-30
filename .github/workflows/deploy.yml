@@ -85,5 +85,7 @@ jobs:
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
           echo "ROLE=$ROLE" >> $GITHUB_ENV
           echo "STAGE=$STAGE" >> $GITHUB_ENV
+
+          cat $GITHUB_ENV
  
-          echo "✅ Deploying $ENV from branch $BRANCH"
+          echo "✅ Deploying stage $STAGE from branch $BRANCH"
