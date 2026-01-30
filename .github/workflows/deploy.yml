@@ -75,4 +75,5 @@ jobs:
 
       - name: Deploy Step
         run: |
-          echo "Deploying to ${{ needs.resolve.outputs.ENV }} using role ${{ needs.resolve.outputs.ROLE }}"
+          echo "env IS  $ENV"
+          echo "stage IS $STAGE"
