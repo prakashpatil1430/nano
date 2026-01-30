@@ -81,4 +81,9 @@ jobs:
           echo "STAGE=${RAW_VAL^^}" >> $GITHUB_OUTPUT
           echo "REF=$REF_VAL" >> $GITHUB_OUTPUT
 
-          echo $GITHUB_OUTPUT
+          # --- DEBUGGING LINES ---
+          echo "--- DEBUG: Contents of GITHUB_OUTPUT file ---"
+          cat $GITHUB_OUTPUT
+          echo "---------------------------------------------"
+
+
