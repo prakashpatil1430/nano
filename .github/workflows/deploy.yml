@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [dev, qa, cicd-new]
+    branches: [dev, cicd-new]
   pull_request:
     branches: [qa-release, 'qa-release-*']
   workflow_dispatch:
@@ -25,63 +25,67 @@ jobs:
       ENV: ${{ steps.logic.outputs.ENV }}
       STAGE: ${{ steps.logic.outputs.STAGE }}
       REF: ${{ steps.logic.outputs.REF }}
-
     steps:
       - id: logic
         shell: bash
         run: |
           EVENT="${{ github.event_name }}"
 
-          # 1. Handle Push (Dev, QA, cicd-new)
+          # 1. Handle Push (Strict branches only)
           if [[ "$EVENT" == "push" ]]; then
             REF_VAL="${{ github.ref_name }}"
-            if [[ "$REF_VAL" == "dev" || "$REF_VAL" == "qa" || "$REF_VAL" == "cicd-new" ]]; then
+            if [[ "$REF_VAL" == "dev" || "$REF_VAL" == "cicd-new" ]]; then
               RAW_ENV="$REF_VAL"
               RAW_STAGE="$REF_VAL"
-            else
-              RAW_ENV="${REF_VAL%%-*}"
-              RAW_STAGE="${RAW_ENV^^}"
+              REF_OUTPUT="$REF_VAL"
             fi
-            REF_OUTPUT="$REF_VAL"
 
-          # 2. Handle Pull Request (QA)
+          # 2. Handle Pull Request (Dynamic QA extraction)
           elif [[ "$EVENT" == "pull_request" ]]; then
             BASE_REF="${{ github.base_ref }}"
-            REF_OUTPUT="${{ github.head_ref }}"
             if [[ "$BASE_REF" == "qa-release" || "$BASE_REF" == qa-release-* ]]; then
               RAW_ENV="${BASE_REF%%-*}"
               RAW_STAGE="$RAW_ENV"
-            else
-              RAW_ENV="${BASE_REF%%-*}"
-              RAW_STAGE="${RAW_ENV^^}"
+              REF_OUTPUT="${{ github.head_ref }}"
             fi
 
-          # 3. Handle Manual Dispatch (Prod)
+          # 3. Handle Manual Dispatch (Prod with validation)
           elif [[ "$EVENT" == "workflow_dispatch" ]]; then
             RAW_ENV="${{ inputs.env_selection }}"
             REF_OUTPUT="${{ inputs.branch_name }}"
-            RAW_STAGE="${RAW_ENV^^}"
+            RAW_STAGE="$RAW_ENV"
             
-            # Use an IF instead of EXIT to keep the script running for logs
             if [[ "$REF_OUTPUT" != "prod" && "$REF_OUTPUT" != prod_* ]]; then
-              echo "❌ ERROR: Invalid branch for prod"
-              # We still exit 1 here because we WANT the job to fail on bad input
+              echo "❌ ERROR: Invalid branch for prod deployment"
               exit 1 
             fi
           fi
 
-          # ---------------------------------------------------
-          # FINAL WRITING & DEBUGGING
-          # ---------------------------------------------------
+          # Final output writing
           echo "ENV=${RAW_ENV,,}" >> $GITHUB_OUTPUT
           echo "STAGE=${RAW_STAGE,,}" >> $GITHUB_OUTPUT
           echo "REF=$REF_OUTPUT" >> $GITHUB_OUTPUT
 
-          echo "--- DEBUGGING OUTPUT ---"
-          echo "Final ENV: ${RAW_ENV,,}"
-          echo "Final STAGE: ${RAW_STAGE,,}"
-          echo "Final REF: $REF_OUTPUT"
-          echo "------------------------"
-          cat $GITHUB_OUTPUT
+          # Debugging section
+          echo "--- RESOLVED VALUES ---"
+          echo "ENV: ${RAW_ENV,,}"
+          echo "STAGE: ${RAW_STAGE,,}"
+          echo "REF: $REF_OUTPUT"
+          echo "-----------------------"
 
+  pipeline:
+    needs: resolve
+    runs-on: ubuntu-latest
+    # Ensure this job only runs if resolve actually found an environment
+    if: needs.resolve.outputs.ENV != ''
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.REF }}
 
+      - name: Execute Deployment
+        run: |
+          echo "🚀 Deploying to Environment: ${{ needs.resolve.outputs.ENV }}"
+          echo "🛠️  Using Stage: ${{ needs.resolve.outputs.STAGE }}"
+          echo "📂 From Branch: ${{ needs.resolve.outputs.REF }}"
