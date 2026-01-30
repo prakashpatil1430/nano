@@ -52,7 +52,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
-          INPUT_BRANCH: ${{ github.event.inputs.branch }}
+          INPUT_BRANCH: ${{ github.event.inputs.branch }}  # used for prod
         run: |
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             if [[ "$BASE_REF" == "dev" ]]; then
@@ -84,6 +84,8 @@ jobs:
           echo "ENV=$ENV" >> $GITHUB_ENV
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
           echo "ROLE=$ROLE" >> $GITHUB_ENV
-          echo "STAGE=$ROLE" >> $GITHUB_ENV
+          echo "STAGE=$STAGE" >> $GITHUB_ENV
+
+          cat $GITHUB_ENV
  
-          echo "✅ Deploying $ENV from branch $BRANCH"
+          echo "✅ Deploying stage $STAGE from branch $BRANCH"
