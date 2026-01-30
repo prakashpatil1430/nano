@@ -79,6 +79,8 @@ jobs:
           echo "STAGE=${RAW_ENV,,}" >> $GITHUB_OUTPUT
           echo "REF=$REF_OUT" >> $GITHUB_OUTPUT
 
+          cat $GITHUB_OUTPUT
+
   pipeline:
     needs: resolve
     runs-on: ubuntu-latest
