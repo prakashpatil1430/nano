@@ -80,3 +80,5 @@ jobs:
           echo "ENV=${RAW_VAL,,}" >> $GITHUB_OUTPUT
           echo "STAGE=${RAW_VAL^^}" >> $GITHUB_OUTPUT
           echo "REF=$REF_VAL" >> $GITHUB_OUTPUT
+
+          echo $GITHUB_OUTPUT
